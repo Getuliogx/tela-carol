@@ -16,8 +16,19 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
-const TWITCH_CHANNEL = process.env.TWITCH_CHANNEL || "icarolinaporto";
+// Configure no Render em Environment
+const TWITCH_CHANNEL = process.env.TWITCH_CHANNEL || "carolinaporto";
 const KICK_CHANNEL = process.env.KICK_CHANNEL || "carolinaporto";
+const KICK_CHATROOM_ID = process.env.KICK_CHATROOM_ID || "";
+
+// IMPORTANTE:
+// A Kick às vezes não envia badge de moderador pelo WebSocket público.
+// Por isso existe essa variável opcional no Render:
+// KICK_ALLOWED_USERS=xyzgx,carolinaporto,outromod
+const KICK_ALLOWED_USERS = String(process.env.KICK_ALLOWED_USERS || "")
+  .split(",")
+  .map(normalizeUser)
+  .filter(Boolean);
 
 app.get("/", (req, res) => {
   res.send("Overlay server online");
@@ -46,7 +57,7 @@ io.on("connection", (socket) => {
 });
 
 function normalizeUser(user) {
-  return String(user || "").toLowerCase().trim();
+  return String(user || "").toLowerCase().trim().replace(/^@/, "");
 }
 
 function parseCommand(message) {
@@ -64,8 +75,15 @@ function parseCommand(message) {
   return null;
 }
 
-function canUseCommand(isMod, isBroadcaster) {
-  return Boolean(isMod || isBroadcaster);
+function canUseCommand(platform, username, isMod, isBroadcaster) {
+  if (isMod || isBroadcaster) return true;
+
+  // Fallback necessário para Kick quando ela não entrega badge de mod no evento público.
+  if (platform === "kick") {
+    return KICK_ALLOWED_USERS.includes(normalizeUser(username));
+  }
+
+  return false;
 }
 
 function sendCommand(platform, username, message, isMod, isBroadcaster) {
@@ -74,7 +92,7 @@ function sendCommand(platform, username, message, isMod, isBroadcaster) {
   const cmd = parseCommand(message);
   if (!cmd) return;
 
-  if (!canUseCommand(isMod, isBroadcaster)) {
+  if (!canUseCommand(platform, username, isMod, isBroadcaster)) {
     console.log(`[${platform}] sem permissão: ${username}`);
     return;
   }
@@ -126,17 +144,20 @@ twitchClient.on("message", (channel, userstate, message, self) => {
 ========================= */
 
 async function getKickChatroomId(channelName) {
+  if (KICK_CHATROOM_ID) return KICK_CHATROOM_ID;
+
   const url = `https://kick.com/api/v2/channels/${encodeURIComponent(channelName)}`;
 
   const response = await fetch(url, {
     headers: {
-      "User-Agent": "Mozilla/5.0",
-      "Accept": "application/json"
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36",
+      "Accept": "application/json",
+      "Referer": `https://kick.com/${channelName}`
     }
   });
 
   if (!response.ok) {
-    throw new Error(`Erro ao buscar canal Kick: ${response.status}`);
+    throw new Error(`Erro ao buscar canal Kick: ${response.status}. Coloque KICK_CHATROOM_ID no Render.`);
   }
 
   const data = await response.json();
@@ -147,7 +168,7 @@ async function getKickChatroomId(channelName) {
     data?.livestream?.chatroom_id;
 
   if (!chatroomId) {
-    throw new Error("Não achei chatroom.id da Kick");
+    throw new Error("Não achei chatroom.id da Kick. Coloque KICK_CHATROOM_ID no Render.");
   }
 
   return chatroomId;
@@ -180,7 +201,7 @@ function parseKickEvent(raw) {
       data
     };
   } catch (err) {
-    console.error("Erro parseKickEvent:", err);
+    console.error("Erro parseKickEvent:", err.message);
     return null;
   }
 }
@@ -227,13 +248,12 @@ function extractKickMessage(data) {
 
 async function startKick() {
   try {
-    const chatroomId = process.env.KICK_CHATROOM_ID || await getKickChatroomId(KICK_CHANNEL);
+    const chatroomId = await getKickChatroomId(KICK_CHANNEL);
 
     console.log("Kick chatroom ID:", chatroomId);
 
-    const wsUrl = "wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=7.6.0&flash=false";
-
-    let ws = new WebSocket(wsUrl);
+    const wsUrl = "wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=8.4.0-rc2&flash=false";
+    const ws = new WebSocket(wsUrl);
 
     ws.on("open", () => {
       console.log("Kick WebSocket aberto");
@@ -265,14 +285,7 @@ async function startKick() {
 
       if (parsed.type === "chat") {
         const info = extractKickMessage(parsed.data);
-
-        sendCommand(
-          "kick",
-          info.username,
-          info.text,
-          info.isMod,
-          info.isBroadcaster
-        );
+        sendCommand("kick", info.username, info.text, info.isMod, info.isBroadcaster);
       }
     });
 
