@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const tmi = require("tmi.js");
+const WebSocket = require("ws");
 
 const app = express();
 const server = http.createServer(app);
@@ -15,7 +16,6 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
-// Coloque os canais SEM @ nas variáveis do Render
 const TWITCH_CHANNEL = process.env.TWITCH_CHANNEL || "icarolinaporto";
 const KICK_CHANNEL = process.env.KICK_CHANNEL || "carolinaporto";
 
@@ -23,8 +23,6 @@ app.get("/", (req, res) => {
   res.send("Overlay server online");
 });
 
-// Teste manual:
-// https://SEU-APP.onrender.com/test?line=1&text=TESTE
 app.get("/test", (req, res) => {
   const line = Number(req.query.line || 1);
   const text = String(req.query.text || "TESTE").slice(0, 200);
@@ -51,10 +49,6 @@ function normalizeUser(user) {
   return String(user || "").toLowerCase().trim();
 }
 
-function canUseCommand(isMod, isBroadcaster) {
-  return Boolean(isMod || isBroadcaster);
-}
-
 function parseCommand(message) {
   const text = String(message || "").trim();
 
@@ -68,6 +62,10 @@ function parseCommand(message) {
   if (/^!clear2$/i.test(text)) return { line: 2, value: "" };
 
   return null;
+}
+
+function canUseCommand(isMod, isBroadcaster) {
+  return Boolean(isMod || isBroadcaster);
 }
 
 function sendCommand(platform, username, message, isMod, isBroadcaster) {
@@ -124,54 +122,171 @@ twitchClient.on("message", (channel, userstate, message, self) => {
 });
 
 /* =========================
-   KICK
+   KICK SEM PUPPETEER
 ========================= */
+
+async function getKickChatroomId(channelName) {
+  const url = `https://kick.com/api/v2/channels/${encodeURIComponent(channelName)}`;
+
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0",
+      "Accept": "application/json"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Erro ao buscar canal Kick: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  const chatroomId =
+    data?.chatroom?.id ||
+    data?.chatroom_id ||
+    data?.livestream?.chatroom_id;
+
+  if (!chatroomId) {
+    throw new Error("Não achei chatroom.id da Kick");
+  }
+
+  return chatroomId;
+}
+
+function parseKickEvent(raw) {
+  try {
+    const msg = JSON.parse(raw);
+
+    if (msg.event === "pusher:connection_established") {
+      return { type: "connected" };
+    }
+
+    if (msg.event === "pusher_internal:subscription_succeeded") {
+      return { type: "subscribed" };
+    }
+
+    if (!String(msg.event || "").includes("ChatMessageEvent")) {
+      return null;
+    }
+
+    let data = msg.data;
+
+    if (typeof data === "string") {
+      data = JSON.parse(data);
+    }
+
+    return {
+      type: "chat",
+      data
+    };
+  } catch (err) {
+    console.error("Erro parseKickEvent:", err);
+    return null;
+  }
+}
+
+function extractKickMessage(data) {
+  const username =
+    data?.sender?.username ||
+    data?.sender?.slug ||
+    data?.user?.username ||
+    data?.username ||
+    "unknown";
+
+  const text =
+    data?.content ||
+    data?.message ||
+    "";
+
+  const badges =
+    data?.sender?.badges ||
+    data?.badges ||
+    [];
+
+  const badgesText = JSON.stringify(badges).toLowerCase();
+  const userLower = normalizeUser(username);
+  const channelLower = normalizeUser(KICK_CHANNEL);
+
+  const isBroadcaster =
+    userLower === channelLower ||
+    badgesText.includes("broadcaster") ||
+    badgesText.includes("host") ||
+    badgesText.includes("owner");
+
+  const isMod =
+    badgesText.includes("moderator") ||
+    badgesText.includes("mod");
+
+  return {
+    username,
+    text,
+    isMod,
+    isBroadcaster
+  };
+}
 
 async function startKick() {
   try {
-    const kick = await import("@retconned/kick-js");
-    const { createClient } = kick;
+    const chatroomId = await getKickChatroomId(KICK_CHANNEL);
 
-    const kickClient = createClient(KICK_CHANNEL, {
-      logger: true,
-      readOnly: true
+    console.log("Kick chatroom ID:", chatroomId);
+
+    const wsUrl = "wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=7.6.0&flash=false";
+
+    let ws = new WebSocket(wsUrl);
+
+    ws.on("open", () => {
+      console.log("Kick WebSocket aberto");
+
+      const subscribeMessage = {
+        event: "pusher:subscribe",
+        data: {
+          auth: "",
+          channel: `chatrooms.${chatroomId}.v2`
+        }
+      };
+
+      ws.send(JSON.stringify(subscribeMessage));
     });
 
-    kickClient.on("ready", () => {
-      console.log("Kick conectado:", KICK_CHANNEL);
+    ws.on("message", (raw) => {
+      const parsed = parseKickEvent(raw.toString());
+      if (!parsed) return;
+
+      if (parsed.type === "connected") {
+        console.log("Kick conectado:", KICK_CHANNEL);
+        return;
+      }
+
+      if (parsed.type === "subscribed") {
+        console.log("Kick inscrito no chat:", KICK_CHANNEL);
+        return;
+      }
+
+      if (parsed.type === "chat") {
+        const info = extractKickMessage(parsed.data);
+
+        sendCommand(
+          "kick",
+          info.username,
+          info.text,
+          info.isMod,
+          info.isBroadcaster
+        );
+      }
     });
 
-    kickClient.on("ChatMessage", (message) => {
-      const username =
-        message?.sender?.username ||
-        message?.sender?.slug ||
-        message?.user?.username ||
-        "unknown";
-
-      const text =
-        message?.content ||
-        message?.message ||
-        "";
-
-      const badges = message?.sender?.badges || [];
-      const badgeText = JSON.stringify(badges).toLowerCase();
-
-      const isMod =
-        badgeText.includes("moderator") ||
-        badgeText.includes("mod");
-
-      const isBroadcaster =
-        normalizeUser(username) === normalizeUser(KICK_CHANNEL) ||
-        badgeText.includes("broadcaster") ||
-        badgeText.includes("host") ||
-        badgeText.includes("owner");
-
-      sendCommand("kick", username, text, isMod, isBroadcaster);
+    ws.on("close", () => {
+      console.log("Kick WebSocket fechado. Reconectando em 5s...");
+      setTimeout(startKick, 5000);
     });
 
-    kickClient.connect();
+    ws.on("error", (err) => {
+      console.error("Erro Kick WebSocket:", err.message);
+    });
   } catch (err) {
-    console.error("Erro Kick:", err);
+    console.error("Erro ao iniciar Kick:", err.message);
+    setTimeout(startKick, 10000);
   }
 }
 
