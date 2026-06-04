@@ -227,7 +227,7 @@ function extractKickMessage(data) {
 
 async function startKick() {
   try {
-    const chatroomId = await getKickChatroomId(KICK_CHANNEL);
+    const chatroomId = process.env.KICK_CHATROOM_ID || await getKickChatroomId(KICK_CHANNEL);
 
     console.log("Kick chatroom ID:", chatroomId);
 
