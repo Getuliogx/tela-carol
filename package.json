@@ -1,6 +1,6 @@
 {
-  "name": "overlay-twitch-kick",
-  "version": "1.0.0",
+  "name": "overlay-twitch-kick-contador",
+  "version": "2.0.0",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
