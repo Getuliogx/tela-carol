@@ -25,17 +25,13 @@ const state = {
   line2: "Patrocinador",
   ep: 1,
   season: 1,
+  showSeason: true,
   style1: { mode: "solid", color: DEFAULT_LINE1_COLOR, seed: Date.now() },
   style2: { mode: "solid", color: DEFAULT_LINE2_COLOR, seed: Date.now() + 1 }
 };
 
-app.get("/", (req, res) => {
-  res.send("Overlay server online");
-});
-
-app.get("/state", (req, res) => {
-  res.json(state);
-});
+app.get("/", (req, res) => res.send("Overlay server online"));
+app.get("/state", (req, res) => res.json(state));
 
 app.get("/test", (req, res) => {
   const line = Number(req.query.line || 1);
@@ -63,13 +59,7 @@ function getKickAllowedUsers() {
 
 function canUseCommand(platform, username, isMod, isBroadcaster) {
   if (isMod || isBroadcaster) return true;
-
-  // A Kick nem sempre manda o badge de moderador pelo WebSocket público.
-  // Por isso use KICK_ALLOWED_USERS no Render para mods da Kick.
-  if (platform === "kick") {
-    return getKickAllowedUsers().includes(normalizeUser(username));
-  }
-
+  if (platform === "kick") return getKickAllowedUsers().includes(normalizeUser(username));
   return false;
 }
 
@@ -85,10 +75,12 @@ function normalizeHex(value) {
 }
 
 function parseEpSeason(text) {
-  const t = String(text || "");
+  const t = String(text || "").trim();
 
-  // Aceita: EP 9 - T3, EP9 T3, Ep. 9 temporada 3, ep 9 t 3
-  const epMatch = t.match(/\bEP\.?\s*(\d+)\b/i);
+  const epMatch =
+    t.match(/\bEP\.?\s*(\d+)\b/i) ||
+    (t.match(/^\d+$/) ? t.match(/^(\d+)$/) : null);
+
   const seasonMatch =
     t.match(/\bT(?:EMPORADA)?\.?\s*(\d+)\b/i) ||
     t.match(/\bTEMPORADA\s*(\d+)\b/i);
@@ -97,12 +89,13 @@ function parseEpSeason(text) {
 
   return {
     ep: epMatch ? Math.max(1, parseInt(epMatch[1], 10)) : state.ep,
-    season: seasonMatch ? Math.max(1, parseInt(seasonMatch[1], 10)) : state.season
+    season: seasonMatch ? Math.max(1, parseInt(seasonMatch[1], 10)) : state.season,
+    hasSeasonInText: Boolean(seasonMatch)
   };
 }
 
 function epText() {
-  return `EP ${state.ep} - T${state.season}`;
+  return state.showSeason ? `EP ${state.ep} - T${state.season}` : `EP ${state.ep}`;
 }
 
 function sendFullState(target = io) {
@@ -112,7 +105,8 @@ function sendFullState(target = io) {
     style1: state.style1,
     style2: state.style2,
     ep: state.ep,
-    season: state.season
+    season: state.season,
+    showSeason: state.showSeason
   });
 }
 
@@ -128,13 +122,10 @@ function emitLine(line) {
 }
 
 function emitStyle(line) {
-  const payload = {
+  io.emit("style_update", {
     line,
     style: line === 1 ? state.style1 : state.style2
-  };
-
-  io.emit("style_update", payload);
-  console.log("Cor atualizada:", payload);
+  });
 }
 
 function updateLine(line, text) {
@@ -147,6 +138,12 @@ function updateLine(line, text) {
     if (parsed) {
       state.ep = parsed.ep;
       state.season = parsed.season;
+
+      // CORREÇÃO PRINCIPAL:
+      // Se o !l1 veio sem T, não mostra "- T".
+      // Se o !l1 veio com T, mostra "- T".
+      state.showSeason = parsed.hasSeasonInText;
+
       state.line1 = epText();
     }
 
@@ -176,8 +173,11 @@ function updateStyle(line, rawValue) {
   }
 
   if (lower === "colorido" || lower === "rainbow") {
-    // Sempre muda as cores quando usar o comando de colorido
-    state[styleKey] = { mode: "rainbow", color: defaultColor, seed: Date.now() + Math.floor(Math.random() * 999999) };
+    state[styleKey] = {
+      mode: "rainbow",
+      color: defaultColor,
+      seed: Date.now() + Math.floor(Math.random() * 999999)
+    };
     emitStyle(line);
     emitLine(line);
     return;
@@ -241,7 +241,6 @@ function runCommand(platform, username, message, isMod, isBroadcaster) {
   }
 
   if (cmd.type === "counter_ep") {
-    // Usa o estado atual. Se você fez !l1 EP 9 - T3, aqui vira EP 10 - T3.
     state.ep = Math.max(1, Number(state.ep || 1)) + 1;
     state.line1 = epText();
     if (state.style1.mode === "rainbow") state.style1.seed = Date.now();
@@ -250,7 +249,6 @@ function runCommand(platform, username, message, isMod, isBroadcaster) {
   }
 
   if (cmd.type === "counter_season") {
-    // Sobe a temporada e volta EP para 1.
     state.season = Math.max(1, Number(state.season || 1)) + 1;
     state.ep = 1;
     state.line1 = epText();
@@ -275,14 +273,10 @@ function runCommand(platform, username, message, isMod, isBroadcaster) {
     return;
   }
 
-  if (cmd.type === "style") {
-    updateStyle(cmd.line, cmd.value);
-  }
+  if (cmd.type === "style") updateStyle(cmd.line, cmd.value);
 }
 
-/* =========================
-   TWITCH
-========================= */
+/* TWITCH */
 
 const twitchClient = new tmi.Client({
   options: { debug: true },
@@ -299,16 +293,13 @@ twitchClient.on("message", (channel, userstate, message, self) => {
 
   const username = userstate.username || "";
   const badges = userstate.badges || {};
-
   const isBroadcaster = Boolean(badges.broadcaster);
   const isMod = Boolean(userstate.mod || badges.moderator);
 
   runCommand("twitch", username, message, isMod, isBroadcaster);
 });
 
-/* =========================
-   KICK SEM PUPPETEER
-========================= */
+/* KICK SEM PUPPETEER */
 
 async function getKickChatroomId(channelName) {
   const url = `https://kick.com/api/v2/channels/${encodeURIComponent(channelName)}`;
@@ -336,7 +327,6 @@ function parseKickEvent(raw) {
 
     if (msg.event === "pusher:connection_established") return { type: "connected" };
     if (msg.event === "pusher_internal:subscription_succeeded") return { type: "subscribed" };
-
     if (!String(msg.event || "").includes("ChatMessageEvent")) return null;
 
     let data = msg.data;
@@ -370,9 +360,7 @@ function extractKickMessage(data) {
     badgesText.includes("host") ||
     badgesText.includes("owner");
 
-  const isMod =
-    badgesText.includes("moderator") ||
-    badgesText.includes("mod");
+  const isMod = badgesText.includes("moderator") || badgesText.includes("mod");
 
   return { username, text, isMod, isBroadcaster };
 }
@@ -387,7 +375,6 @@ async function startKick() {
 
     ws.on("open", () => {
       console.log("Kick WebSocket aberto");
-
       ws.send(JSON.stringify({
         event: "pusher:subscribe",
         data: { auth: "", channel: `chatrooms.${chatroomId}.v2` }
@@ -419,9 +406,7 @@ async function startKick() {
       setTimeout(startKick, 5000);
     });
 
-    ws.on("error", (err) => {
-      console.error("Erro Kick WebSocket:", err.message);
-    });
+    ws.on("error", (err) => console.error("Erro Kick WebSocket:", err.message));
   } catch (err) {
     console.error("Erro ao iniciar Kick:", err.message);
     setTimeout(startKick, 10000);

@@ -1,52 +1,49 @@
-PACOTE CORRIGIDO - Render + StreamElements
+CORREÇÃO: modo com T e sem T
 
-CORREÇÕES:
-- Agora já começa em: EP 1 - T1
-- !l1 EP 9 - T3 atualiza o contador interno.
-- Depois de !l1 EP 9 - T3, o comando !c1 vira EP 10 - T3.
-- !c2 aumenta temporada e volta EP para 1.
-- !j1 colorido e !j2 colorido mudam as cores das letras toda vez que usar.
-- !j1 reset e !j2 reset voltam para as cores normais.
-- A linha colorida também ganha cores novas quando o texto muda.
+Agora o sistema respeita o que você escreveu no !l1.
 
-ARQUIVOS:
-- server.js e package.json: colocar no GitHub do Render.
-- streamelements-html.html: colar no HTML do StreamElements.
-- streamelements-css.css: colar no CSS do StreamElements.
-- streamelements-js.js: colar no JS do StreamElements.
+EXEMPLOS:
 
-COMANDOS:
 !l1 EP 9 - T3
-!l2 Nome do patrocinador
+mostra: EP 9 - T3
+!c1 mostra: EP 10 - T3
+!c2 mostra: EP 1 - T4
 
+!l1 EP 9
+mostra: EP 9
+!c1 mostra: EP 10
+!c2 mostra: EP 1
+
+Mesmo quando não mostra "- T", a temporada continua salva por dentro.
+Exemplo:
+Se estava em T3 e você usa !l1 EP 9, ele mostra EP 9, mas continua sabendo que está na T3.
+Se depois usar !l1 EP 9 - T3, volta a mostrar com temporada.
+
+Também aceita:
+!l1 EP9
+!l1 9
+
+Comandos:
+!l1 texto
+!l2 texto
 !c1
-Sobe o episódio usando o valor atual.
-
 !c2
-Sobe a temporada e volta EP para 1.
-
 !ep 9
-Ajusta só o episódio.
-
 !t 3
-Ajusta só a temporada.
-
 !j1 #ff0000
 !j2 #00ff00
-
 !j1 colorido
 !j2 colorido
-
 !j1 reset
 !j2 reset
 
-IMPORTANTE:
-No arquivo streamelements-js.js e streamelements-html.html, se sua URL do Render for diferente de:
-https://tela-carol.onrender.com
-troque pela sua URL real.
+Substitua no GitHub/Render:
+server.js
+package.json
 
-VARIÁVEIS DO RENDER:
-TWITCH_CHANNEL = carolinaporto
-KICK_CHANNEL = carolinaporto
-KICK_CHATROOM_ID = ID_DA_SALA_DA_KICK
-KICK_ALLOWED_USERS = xyzgx,carolinaporto
+Substitua no StreamElements:
+streamelements-html.html
+streamelements-css.css
+streamelements-js.js
+
+Se sua URL do Render não for https://tela-carol.onrender.com, troque nos arquivos do StreamElements.
