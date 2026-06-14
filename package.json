@@ -1,5 +1,5 @@
 {
-  "name": "overlay-twitch-kick-contador-colorido",
+  "name": "overlay-twitch-kick",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {

@@ -1,68 +1,52 @@
-OVERLAY TWITCH + KICK PARA RENDER
+PACOTE CORRIGIDO - Render + StreamElements
 
-Arquivos do Render:
-- server.js
-- package.json
+CORREÇÕES:
+- Agora já começa em: EP 1 - T1
+- !l1 EP 9 - T3 atualiza o contador interno.
+- Depois de !l1 EP 9 - T3, o comando !c1 vira EP 10 - T3.
+- !c2 aumenta temporada e volta EP para 1.
+- !j1 colorido e !j2 colorido mudam as cores das letras toda vez que usar.
+- !j1 reset e !j2 reset voltam para as cores normais.
+- A linha colorida também ganha cores novas quando o texto muda.
 
-Arquivos do StreamElements:
-- streamelements-html.html -> aba HTML
-- streamelements-css.css  -> aba CSS
-- streamelements-js.js    -> aba JS
+ARQUIVOS:
+- server.js e package.json: colocar no GitHub do Render.
+- streamelements-html.html: colar no HTML do StreamElements.
+- streamelements-css.css: colar no CSS do StreamElements.
+- streamelements-js.js: colar no JS do StreamElements.
 
-IMPORTANTE:
-Se sua URL do Render não for https://tela-carol.onrender.com, troque isso nos arquivos do StreamElements:
-- streamelements-html.html
-- streamelements-js.js
-
-Variáveis no Render > Environment:
-TWITCH_CHANNEL=carolinaporto
-KICK_CHANNEL=carolinaporto
-KICK_CHATROOM_ID=ID_DA_SALA_DA_KICK
-KICK_ALLOWED_USERS=xyzgx,carolinaporto
-
-Comandos:
+COMANDOS:
 !l1 EP 9 - T3
-!l2 Patrocinador
+!l2 Nome do patrocinador
 
 !c1
-Aumenta o episódio. Exemplo: EP 9 - T3 -> EP 10 - T3
+Sobe o episódio usando o valor atual.
 
 !c2
-Aumenta a temporada e volta o EP para 1. Exemplo: EP 10 - T3 -> EP 1 - T4
+Sobe a temporada e volta EP para 1.
 
 !ep 9
-Define episódio manualmente.
+Ajusta só o episódio.
 
 !t 3
-Define temporada manualmente.
+Ajusta só a temporada.
 
-Cores:
 !j1 #ff0000
 !j2 #00ff00
-!j1 ff0000
-!j2 00ff00
-!j1(#ff0000)
-!j2(#00ff00)
 
-Colorido:
 !j1 colorido
 !j2 colorido
-!j1(colorido)
-!j2(colorido)
 
-Cada vez que usar colorido, as letras ficam com cores diferentes.
-Se a linha estiver em modo colorido e você atualizar o texto, as cores também mudam.
-
-Reset das cores:
 !j1 reset
 !j2 reset
-!j1(reset)
-!j2(reset)
 
-Cores normais do reset:
-Linha 1: #ffffff
-Linha 2: #f49dee
+IMPORTANTE:
+No arquivo streamelements-js.js e streamelements-html.html, se sua URL do Render for diferente de:
+https://tela-carol.onrender.com
+troque pela sua URL real.
 
-Permissão:
-Twitch: broadcaster/mod.
-Kick: broadcaster/mod detectado OU usuário listado em KICK_ALLOWED_USERS, porque a Kick nem sempre envia badge de mod pelo websocket público.
+VARIÁVEIS DO RENDER:
+TWITCH_CHANNEL = carolinaporto
+KICK_CHANNEL = carolinaporto
+KICK_CHATROOM_ID = ID_DA_SALA_DA_KICK
+KICK_ALLOWED_USERS = xyzgx,carolinaporto
